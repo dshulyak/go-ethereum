@@ -70,6 +70,7 @@ func (e Event) tupleUnpack(v interface{}, output []byte) error {
 		input := e.Inputs[i]
 		if input.Indexed {
 			// can't read, continue
+			j--
 			continue
 		} else if input.Type.T == ArrayTy {
 			// need to move this up because they read sequentially

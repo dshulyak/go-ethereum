@@ -37,11 +37,13 @@ const (
 	HashTy
 	FixedPointTy
 	FunctionTy
+	StructTy
 )
 
 // Type is the reflection of the supported argument type
 type Type struct {
-	Elem *Type
+	Elem  *Type
+	Elems []*Type
 
 	Kind reflect.Kind
 	Type reflect.Type
@@ -56,6 +58,34 @@ var (
 	typeRegex = regexp.MustCompile("([a-zA-Z]+)(([0-9]+)(x([0-9]+))?)?")
 )
 
+type structField struct {
+	Type string
+	Name string
+}
+
+func NewStructType(t string, fields []structField) (typ Type, err error) {
+	typ.stringKind = t
+	typ.Kind = reflect.Struct
+	typ.Elems = make([]*Type, len(fields))
+	structFields := make([]reflect.StructField, len(fields))
+	size := 0
+	for i := range fields {
+		field := fields[i]
+		fieldType, err := NewType(field.Type)
+		if err != nil {
+			return Type{}, err
+		}
+		structFields[i].Type = fieldType.Type
+		structFields[i].Name = strings.Title(field.Name)
+		typ.Elems[i] = &fieldType
+		size += fieldType.Size
+	}
+	typ.Type = reflect.StructOf(structFields)
+	typ.Size = size
+	typ.T = StructTy
+	return
+}
+
 // NewType creates a new reflection type of abi type given in t.
 func NewType(t string) (typ Type, err error) {
 	// check that array brackets are equal if they exist
@@ -64,7 +94,6 @@ func NewType(t string) (typ Type, err error) {
 	}
 
 	typ.stringKind = t
-
 	// if there are brackets, get ready to go into slice/array mode and
 	// recursively create the type
 	if strings.Count(t, "[") != 0 {
@@ -195,6 +224,16 @@ func (t Type) pack(v reflect.Value) ([]byte, error) {
 		} else if t.T == ArrayTy {
 			return packed, nil
 		}
+	} else if t.T == StructTy {
+		var packed []byte
+		for i, elem := range t.Elems {
+			val, err := elem.pack(v.Field(i))
+			if err != nil {
+				return nil, err
+			}
+			packed = append(packed, val...)
+		}
+		return packed, nil
 	}
 	return packElement(t, v), nil
 }

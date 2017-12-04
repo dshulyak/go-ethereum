@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
+	"strings"
 )
 
 // The ABI holds information about a contract's context and available
@@ -29,6 +31,7 @@ type ABI struct {
 	Constructor Method
 	Methods     map[string]Method
 	Events      map[string]Event
+	Structs     map[string]Argument
 }
 
 // JSON returns a parsed ABI interface and error if it failed.
@@ -105,13 +108,12 @@ func (abi *ABI) UnmarshalJSON(data []byte) error {
 		Inputs    []Argument
 		Outputs   []Argument
 	}
-
 	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
-
 	abi.Methods = make(map[string]Method)
 	abi.Events = make(map[string]Event)
+	abi.Structs = make(map[string]Argument)
 	for _, field := range fields {
 		switch field.Type {
 		case "constructor":
@@ -131,6 +133,11 @@ func (abi *ABI) UnmarshalJSON(data []byte) error {
 				Name:      field.Name,
 				Anonymous: field.Anonymous,
 				Inputs:    field.Inputs,
+			}
+		}
+		for _, arg := range field.Inputs {
+			if arg.Type.Kind == reflect.Struct {
+				abi.Structs[strings.Title(arg.Name)] = arg
 			}
 		}
 	}

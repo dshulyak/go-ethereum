@@ -91,7 +91,7 @@ func (e Event) tupleUnpack(v interface{}, output []byte) error {
 			for j := 0; j < typ.NumField(); j++ {
 				field := typ.Field(j)
 				// TODO read tags: `abi:"fieldName"`
-				if field.Name == strings.ToUpper(e.Inputs[i].Name[:1])+e.Inputs[i].Name[1:] {
+				if field.Name == strings.Title(e.Inputs[i].Name) {
 					if err := set(value.Field(j), reflectValue, e.Inputs[i]); err != nil {
 						return err
 					}

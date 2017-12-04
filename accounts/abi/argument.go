@@ -31,16 +31,20 @@ type Argument struct {
 
 func (a *Argument) UnmarshalJSON(data []byte) error {
 	var extarg struct {
-		Name    string
-		Type    string
-		Indexed bool
+		Name       string
+		Type       string
+		Indexed    bool
+		Components []structField
 	}
 	err := json.Unmarshal(data, &extarg)
 	if err != nil {
 		return fmt.Errorf("argument json err: %v", err)
 	}
-
-	a.Type, err = NewType(extarg.Type)
+	if len(extarg.Components) > 0 {
+		a.Type, err = NewStructType(extarg.Type, extarg.Components)
+	} else {
+		a.Type, err = NewType(extarg.Type)
+	}
 	if err != nil {
 		return err
 	}

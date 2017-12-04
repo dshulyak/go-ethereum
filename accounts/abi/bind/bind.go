@@ -48,7 +48,6 @@ const (
 func Bind(types []string, abis []string, bytecodes []string, pkg string, lang Lang) (string, error) {
 	// Process each individual contract requested binding
 	contracts := make(map[string]*tmplContract)
-
 	for i := 0; i < len(types); i++ {
 		// Parse the actual ABI to generate the binding for
 		evmABI, err := abi.JSON(strings.NewReader(abis[i]))
@@ -72,7 +71,6 @@ func Bind(types []string, abis []string, bytecodes []string, pkg string, lang La
 			// Normalize the method for capital cases and non-anonymous inputs/outputs
 			normalized := original
 			normalized.Name = methodNormalizer[lang](original.Name)
-
 			normalized.Inputs = make([]abi.Argument, len(original.Inputs))
 			copy(normalized.Inputs, original.Inputs)
 			for j, input := range normalized.Inputs {
@@ -177,6 +175,19 @@ func bindTypeGo(kind abi.Type) string {
 			return stringKind
 		}
 		return fmt.Sprintf("%s%s", parts[2], parts[1])
+
+	case stringKind == "tuple":
+		var b bytes.Buffer
+		b.WriteString("struct{")
+		for i, elem := range kind.Elems {
+			field := kind.Type.Field(i)
+			b.WriteString(field.Name)
+			b.WriteString(" ")
+			b.WriteString(bindTypeGo(*elem))
+			b.WriteString("; ")
+		}
+		b.WriteString("}")
+		return b.String()
 
 	default:
 		return stringKind

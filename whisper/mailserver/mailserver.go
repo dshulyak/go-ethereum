@@ -55,6 +55,18 @@ func NewDbKey(t uint32, h common.Hash) *DBKey {
 	return &k
 }
 
+func NewDbTopicKey(t uint32, topic whisper.TopicType, h common.Hash) *DBKey {
+	const sz = common.HashLength + whisper.TopicLength + 4
+	var k DBKey
+	k.timestamp = t
+	k.hash = h
+	k.raw = make([]byte, sz)
+	binary.BigEndian.PutUint32(k.raw[4:8], k.timestamp)
+	copy(k.raw[0:whisper.TopicLength], topic[:])
+	copy(k.raw[4+whisper.TopicLength:], k.hash[:])
+	return &k
+}
+
 func (s *WMailServer) Init(shh *whisper.Whisper, path string, password string, pow float64) {
 	var err error
 	if len(path) == 0 {
@@ -90,7 +102,7 @@ func (s *WMailServer) Close() {
 }
 
 func (s *WMailServer) Archive(env *whisper.Envelope) {
-	key := NewDbKey(env.Expiry-env.TTL, env.Hash())
+	key := NewDbTopicKey(env.Expiry-env.TTL, env.Topic, env.Hash())
 	rawEnvelope, err := rlp.EncodeToBytes(env)
 	if err != nil {
 		log.Error(fmt.Sprintf("rlp.EncodeToBytes failed: %s", err))
@@ -119,12 +131,13 @@ func (s *WMailServer) processRequest(peer *whisper.Peer, lower, upper uint32, to
 	var err error
 	var zero common.Hash
 	var empty whisper.TopicType
-	kl := NewDbKey(lower, zero)
-	ku := NewDbKey(upper, zero)
+	kl := NewDbTopicKey(lower, topic, zero)
+	ku := NewDbTopicKey(upper, topic, zero)
 	i := s.db.NewIterator(&util.Range{Start: kl.raw, Limit: ku.raw}, nil)
 	defer i.Release()
-
+	loops := 0
 	for i.Next() {
+		loops++
 		var envelope whisper.Envelope
 		err = rlp.DecodeBytes(i.Value(), &envelope)
 		if err != nil {
@@ -144,7 +157,6 @@ func (s *WMailServer) processRequest(peer *whisper.Peer, lower, upper uint32, to
 			}
 		}
 	}
-
 	err = i.Error()
 	if err != nil {
 		log.Error(fmt.Sprintf("Level DB iterator error: %s", err))

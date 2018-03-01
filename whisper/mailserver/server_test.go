@@ -19,14 +19,17 @@ package mailserver
 import (
 	"crypto/ecdsa"
 	"encoding/binary"
+	"fmt"
 	"io/ioutil"
 	"math/rand"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	whisper "github.com/ethereum/go-ethereum/whisper/whisperv6"
+	"github.com/stretchr/testify/require"
 )
 
 const powRequirement = 0.00001
@@ -78,6 +81,27 @@ func generateEnvelope(t *testing.T) *whisper.Envelope {
 	return env
 }
 
+func generateEnvelopeWithTopic(b *testing.B, topic whisper.TopicType) *whisper.Envelope {
+	h := crypto.Keccak256Hash([]byte("test sample data"))
+	params := &whisper.MessageParams{
+		KeySym:   h[:],
+		Topic:    topic,
+		Payload:  make([]byte, 120),
+		PoW:      powRequirement,
+		WorkTime: 2,
+	}
+
+	msg, err := whisper.NewSentMessage(params)
+	if err != nil {
+		b.Fatalf("failed to create new message with seed %d: %s.", seed, err)
+	}
+	env, err := msg.Wrap(params)
+	if err != nil {
+		b.Fatalf("failed to wrap with seed %d: %s.", seed, err)
+	}
+	return env
+}
+
 func TestMailServer(t *testing.T) {
 	const password = "password_for_this_test"
 	const dbPath = "whisper-server-test"
@@ -103,6 +127,64 @@ func TestMailServer(t *testing.T) {
 	env := generateEnvelope(t)
 	server.Archive(env)
 	deliverTest(t, &server, env)
+}
+
+func BenchmarkMailServerDb(b *testing.B) {
+	b.StopTimer()
+	const password = "password_for_this_test"
+	const dbPath = "whisper-server-test"
+
+	dir, err := ioutil.TempDir("/tmp", dbPath)
+	defer func() { os.Remove(dir) }()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	var server WMailServer
+	shh = whisper.New(&whisper.DefaultConfig)
+	shh.RegisterServer(&server)
+
+	server.Init(shh, dir, password, powRequirement)
+	defer server.Close()
+
+	keyID, err = shh.AddSymKeyFromPassword(password)
+	if err != nil {
+		b.Fatalf("Failed to create symmetric key for mail request: %s", err)
+	}
+	rTopic := make([]byte, 4)
+	topics := make([]whisper.TopicType, 3)
+	for i := 0; i < 2; i++ {
+		rand.Read(rTopic)
+		copy(topics[i][:], rTopic[0:4])
+		for j := 0; j < 100000; j++ {
+			env := generateEnvelopeWithTopic(b, topics[i])
+			server.Archive(env)
+		}
+	}
+	rand.Read(rTopic)
+	copy(topics[2][:], rTopic[0:4])
+	for j := 0; j < 10; j++ {
+		env := generateEnvelopeWithTopic(b, topics[2])
+		server.Archive(env)
+	}
+	for j := 0; j < 10; j++ {
+		env := generateEnvelopeWithTopic(b, topics[1])
+		env.Expiry = 100000
+		server.Archive(env)
+	}
+
+	b.StartTimer()
+	for n := 0; n < b.N; n++ {
+		require.Equal(b, 10, len(server.processRequest(nil, 0, time.Now().Add(10*time.Minute).Unix(), topics[2])))
+	}
+}
+
+func TestTopicKey(t *testing.T) {
+	var h common.Hash
+	i := uint32(time.Now().Unix())
+	k := NewDbTopicKey(i, whisper.TopicType{}, h)
+	assert(len(k.raw) == common.HashLength+4+4, "wrong DB key length", t)
+	fmt.Println(k.raw)
 }
 
 func deliverTest(t *testing.T, server *WMailServer, env *whisper.Envelope) {

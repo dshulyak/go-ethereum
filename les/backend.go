@@ -205,6 +205,12 @@ func (s *LightEthereum) APIs() []rpc.API {
 			Service:   s.netRPCService,
 			Public:    true,
 		},
+		{
+			Namespace: "eth",
+			Version:   "1.0",
+			Service:   &FetcherApi{s.protocolManager.fetcher},
+			Public:    true,
+		},
 	}...)
 }
 

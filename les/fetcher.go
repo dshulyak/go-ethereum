@@ -56,6 +56,7 @@ type lightFetcher struct {
 	deliverChn chan fetchResponse
 	timeoutChn chan uint64
 	requestChn chan bool // true if initiated from outside
+	enabled    chan bool
 }
 
 // fetcherPeerInfo holds fetcher-specific information about each active peer
@@ -117,6 +118,7 @@ func newLightFetcher(pm *ProtocolManager) *lightFetcher {
 		requestChn:     make(chan bool, 100),
 		syncDone:       make(chan *peer),
 		maxConfirmedTd: big.NewInt(0),
+		enabled:        make(chan bool, 1),
 	}
 	pm.peers.notify(f)
 
@@ -125,17 +127,34 @@ func newLightFetcher(pm *ProtocolManager) *lightFetcher {
 	return f
 }
 
+func (f *lightFetcher) Enable() {
+	f.enabled <- true
+}
+
+func (f *lightFetcher) Disable() {
+	f.enabled <- false
+}
+
 // syncLoop is the main event loop of the light fetcher
 func (f *lightFetcher) syncLoop() {
 	requesting := false
 	defer f.pm.wg.Done()
+	enabled := false
 	for {
 		select {
 		case <-f.pm.quitSync:
 			return
+		case val := <-f.enabled:
+			enabled = val
 		// when a new announce is received, request loop keeps running until
 		// no further requests are necessary or possible
 		case newAnnounce := <-f.requestChn:
+			if !enabled {
+				log.Info("synchronization is disabled")
+				time.AfterFunc(2*time.Second, func() { f.requestChn <- true })
+				continue
+			}
+
 			f.lock.Lock()
 			s := requesting
 			requesting = false
